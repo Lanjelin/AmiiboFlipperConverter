@@ -1,6 +1,6 @@
 """
 amiiboconvert.py
-9/8/2022
+2023-11-03
 Modified Amiibo Flipper Conversion Code
 
 Original Code by Friendartiste
@@ -52,7 +52,7 @@ def convert(contents: bytes) -> Tuple[str, int]:
 
     page = []
     for i in range(len(contents)):
-        if page_count > 134:
+        if page_count > 132:
             logging.debug(f"We have enough pages, breaking")
             break
 
@@ -74,11 +74,20 @@ def convert(contents: bytes) -> Tuple[str, int]:
         page_count += 1
 
     # we are missing a few pages, padding with zeroes
-    if page_count < 135:
-        logging.debug(f"We are missing {135-page_count} pages, padding with zeroes")
-        while page_count < 135:
+    if page_count < 133:
+        logging.debug(f"We are missing {133-page_count} pages, padding with zeroes")
+        while page_count < 133:
             buffer.append(f"Page {page_count}: 00 00 00 00")
             page_count += 1
+
+    # now add pages 133 (PWD) and 134 (PACK + RFUI / Reserved for future use)
+    pwd_hex = ' '.join('{:02X}'.format(byte) for byte in get_pwd(contents))
+    # PWD
+    buffer.append(f"Page {page_count}: {pwd_hex}")
+    page_count += 1
+    # PACK (0x80 0x80) + RFUI (0x00 0x00)
+    buffer.append(f"Page {page_count}: 80 80 00 00")
+    page_count += 1
 
     return "\n".join(buffer), page_count
 
@@ -99,6 +108,17 @@ def get_uid(contents: bytes) -> str:
 
     return " ".join(page).upper()
 
+def get_pwd(contents: bytes) -> bytes:
+    """Return the PWD associated to the content UID"""
+    uid = bytes.fromhex(get_uid(contents))
+    pwd = bytearray(4)
+    # from https://github.com/flipperdevices/flipperzero-firmware/blob/0.93.0/lib/nfc/protocols/mifare_ultralight.c#L24C1-L35C1
+    pwd[0] = uid[1] ^ uid[3] ^ 0xAA
+    pwd[1] = uid[2] ^ uid[4] ^ 0x55
+    pwd[2] = uid[3] ^ uid[5] ^ 0xAA
+    pwd[3] = uid[4] ^ uid[6] ^ 0x55
+
+    return bytes(pwd)
 
 def assemble_code(contents: {hex}) -> str:
     """
